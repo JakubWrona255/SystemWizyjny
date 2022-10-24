@@ -1,5 +1,6 @@
 import ImageProcess as imgp
 import cv2 as cv
+__all__ = []
 
 filename = 'nail_4.jpg'
 

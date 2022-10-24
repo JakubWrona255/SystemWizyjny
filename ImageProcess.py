@@ -15,7 +15,6 @@ def imgPreliminaryProcessing(image,gammaCorFactor,threshold):
 
     imageGray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)  # convert to grayscale
     imageGray = gammaCorrection(imageGray, gammaCorFactor)  # correct lighting 1.2
-
     (_, imageBinary) = cv.threshold(imageGray, threshold, 255, cv.THRESH_BINARY_INV)  # convert to binary #40
 
     imgDilate = cv.dilate(imageBinary, None, iterations=1)
