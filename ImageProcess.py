@@ -11,7 +11,7 @@ def readImg(filename):
     return image
 
 
-def imgPreliminaryProcessing(image,gammaCorFactor,threshold):
+def imgPreliminaryProcessing(image,gammaCorFactor,threshold,showImg=False):
 
     imageGray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)  # convert to grayscale
     imageGray = gammaCorrection(imageGray, gammaCorFactor)  # correct lighting 1.2
@@ -19,38 +19,56 @@ def imgPreliminaryProcessing(image,gammaCorFactor,threshold):
 
     imgDilate = cv.dilate(imageBinary, None, iterations=1)
     imgDilateAndEroded = cv.erode(imgDilate, None, iterations=1)
-
-    cv.imshow("original", image)
-    cv.imshow("imgDilate", imgDilate)
-    cv.imshow("imgDilateAndEroded", imgDilateAndEroded)
-    cv.imshow("imageGray", imageGray)
-    cv.imshow("binary", imageBinary)
-
+    if showImg:
+        cv.imshow("imgDilateAndEroded", imgDilateAndEroded)
+        cv.waitKey(0)
     return imgDilateAndEroded
 
 
-def findNail(image,scale_factor):
+def findNail(image,scale_factor,gammaFactor,threshold):
 
-    image2 = cv.resize(image, (0,0), fx=scale_factor, fy=scale_factor) #make image smaller
+    image2 = cv.resize(image, (0,0), fx=scale_factor, fy=scale_factor)  #make image smaller
+    imgDilateAndEroded = imgPreliminaryProcessing(image2,gammaCorFactor=gammaFactor,threshold=threshold,showImg=True)
+    highHistogram,widthHistogram = lateralHistogram(imgDilateAndEroded)
 
-    imgDilateAndEroded = imgPreliminaryProcessing(image2,gammaCorFactor=1.2,threshold=50)
+    xMin,xMax = scanLateralHistogram(widthHistogram,0.05)
+    yMin, yMax = scanLateralHistogram(highHistogram, 0.05)
 
-    highHistogram,widthHistogram = lateralHistogram( imgDilateAndEroded)
-    relativeHighOfNailCenter = np.argmin(highHistogram) / len(highHistogram)
-    relativeWidthOfNailBeginning = np.argmin(widthHistogram) / len(widthHistogram)
-
-    thresholdMultiplier = 0.99  #detect end of nail when histogram values return to 0.99 of max values
-    threshold = thresholdMultiplier * np.max(widthHistogram)
-    relativeWidthOfNailEnd = 0
-
-    for i in range(np.argmin(widthHistogram),len(widthHistogram)): #scan histogram from beginning of nail to the end of image width
-        if widthHistogram[i] > threshold:
-            relativeWidthOfNailEnd = i / len(widthHistogram)
-            break  #get out of the scan
-    return relativeHighOfNailCenter, relativeWidthOfNailBeginning, relativeWidthOfNailEnd
+    return yMin, yMax, xMin, xMax
 
 
-def lateralHistogram(image):
+def scanLateralHistogram(lateralHist, changeFactor):
+
+    detection = 0
+    varMin = varMax = 0
+
+    threshold = (np.max(lateralHist) - np.min(lateralHist)) * changeFactor
+    k = 0
+
+    for i in range(0,len(lateralHist)):  #scan histogram from beginning of nail to the end of image width
+        if detection == 0:
+            if lateralHist[i] < np.max(lateralHist) - threshold:
+                k += 1
+                if k > 4:
+                    varMin = i / len(lateralHist)
+                    detection = 1
+                    k = 0
+            else:
+                k = 0
+
+        if detection == 1:
+            if lateralHist[i] > np.max(lateralHist) - threshold:
+                k += 1
+                if k > 4:
+                    varMax = i / len(lateralHist)
+                    break
+            else:
+                k = 0
+
+    return varMin, varMax
+
+
+def lateralHistogram(image, showPlot=False):
     high, width = image.shape
     highHistogram = np.zeros(high)
     widthHistogram = np.zeros(width)
@@ -60,16 +78,19 @@ def lateralHistogram(image):
             highHistogram[i] = highHistogram[i] + image[i,k]
             widthHistogram[k] = widthHistogram[k] + image[i,k]
 
-    plt.subplot(121)
-    plt.plot(highHistogram)
-    plt.title('high histogram')
+    if showPlot:
 
-    plt.subplot(122)
-    plt.plot(widthHistogram)
-    plt.title('width histogram')
+        plt.subplot(121)
+        plt.plot(highHistogram)
+        plt.title('high histogram')
 
-    plt.suptitle('lateral histograms')
-    plt.show()
+        plt.subplot(122)
+        plt.plot(widthHistogram)
+        plt.title('width histogram')
+
+        plt.suptitle('lateral histograms')
+        plt.show()
+
     return highHistogram,widthHistogram
 
 
@@ -80,41 +101,101 @@ def gammaCorrection(src, gamma):
     return cv.LUT(src, table)
 
 
-def cropImage(image,relHighOfCenter, relWidthOfBeginning, relWidthOfEnd,hightParam,widthParam):
+def cropImage(image,yMin, yMax, xMin, xMax, extraHeight, extraWidth,showImg=False):
 
     orgHigh, orgWidth, colorsNum = image.shape
-    highCropStart = int(orgHigh * (relHighOfCenter - hightParam))
-    highCropStop = int(orgHigh * (relHighOfCenter + hightParam))
-    widthCropStart = int(orgWidth * (relWidthOfBeginning - widthParam))
-    widthCropStop = int(orgWidth * (relWidthOfEnd + widthParam))
+    highCropStart = int(orgHigh * (yMin - extraHeight))
+    highCropStop = int(orgHigh * (yMax + extraHeight))
+    widthCropStart = int(orgWidth * (xMin - extraWidth))
+    widthCropStop = int(orgWidth * (xMax + extraWidth))
+
     imageCrop = image[highCropStart:highCropStop,widthCropStart:widthCropStop].copy()
-    cv.imshow('Cropped',imageCrop)
-    cv.waitKey(0)
+    if showImg:
+        cv.imshow('Cropped',imageCrop)
+        cv.waitKey(0)
     return imageCrop
 
 
-def lookForDefects(image):
-    checkHead(image)
+def lookForDefects(imageRaw, gammaCorFactor, threshold):
+    errors = np.zeros(shape=5,dtype=bool)
+
+    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=True)
+    highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=True)
+
+    errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)        #works
+
+    printErrors(errors)
 
 
-def checkHead(image):
-    imageTransformed = imgPreliminaryProcessing(image,gammaCorFactor=1.1,threshold=50)
-    highHistogram, widthHistogram = lateralHistogram(imageTransformed)
-    #for i in range ()
+def printErrors(errors):
+    errorTypes = ['Bent nail','Problem with head','Cut point','Extra material on point','Smashed point']
+
+    for i in range(0,len(errors)):
+            print(errorTypes[i],' : ',errors[i])
 
 
+def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
+
+    output = imageRaw.copy()
+    edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 80, 30)
+
+    longestLineLen = 0.0
+    longestIndex = 0
+
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+
+            x1,y1,x2,y2 = l[0],l[1],l[2],l[3]
+            lineLen = np.sqrt((x1-x2)**2 + (y1-y2)**2)
+
+            if lineLen > longestLineLen:    #find longest line among found lines
+                longestLineLen = lineLen
+                longestIndex = i
+
+    angles = []
+    detectedError = False
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            longest = linesP[longestIndex][0]
+            l = linesP[i][0]
+
+            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
+            xl1, yl1, xl2, yl2 = longest[0], longest[1], longest[2], longest[3]
+
+            angle1 = np.arctan(np.absolute(y1-y2)/np.absolute(x1-x2))/np.pi * 180
+            angle2 = np.arctan(np.absolute(yl1 - yl2) / np.absolute(xl1 - xl2))/np.pi * 180
+            angles.append(np.absolute(angle2-angle1))
+
+    for i in range (0,len(angles)):
+        if angles[i] > maxAngDiff:
+            detectedError = True
+            l = linesP[i][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+            l = linesP[longestIndex][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+
+    if detectedError:
+        cv.imshow("Window", output)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+    return detectedError
 
 
+def getLines(imageRaw, gammaCorFactor, threshold):
 
+    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold)
+    output = imageRaw.copy()
+    edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
 
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 80, 30)
 
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255,0, 255), 2, cv.LINE_AA)
 
-#cv.waitKey(0)
-    #cv.destroyAllWindows()
-
-    #edgesDet = cv.Canny(imageGray, 30, 100, None, 3)
-    #linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 50, None, 50, 10)
-    #if linesP is not None:
-    #    for i in range(0, len(linesP)):
-    #        l = linesP[i][0]
-    #        cv.line(output, (l[0], l[1]), (l[2], l[3]), (0, 0, 255), 2, cv.LINE_AA)
+    cv.imshow("Window", output)
+    cv.waitKey(0)
+    cv.destroyAllWindows()

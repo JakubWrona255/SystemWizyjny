@@ -1,13 +1,15 @@
+import numpy as np
+
 import ImageProcess as imgp
 import cv2 as cv
-__all__ = []
+#__all__ = []
 
-filename = 'nail_4.jpg'
+filename = 'bent_1.jpg'
 
 image = imgp.readImg(filename)
 
-relHighOfCenter, relWidthOfBeginning, relWidthOfEnd = imgp.findNail(image, scale_factor=0.15)
+yMin, yMax, xMin,xMax = imgp.findNail(image, scale_factor=0.15, gammaFactor=1,threshold=70)
 
-imageCropped = imgp.cropImage(image,relHighOfCenter, relWidthOfBeginning, relWidthOfEnd,hightParam=0.1,widthParam=0.05)
+imageCropped = imgp.cropImage(image, yMin, yMax, xMin, xMax, extraHeight=0.05, extraWidth=0.05)
 
-imgp.lookForDefects(imageCropped)
+imgp.lookForDefects(imageCropped,gammaCorFactor=1, threshold=50)
