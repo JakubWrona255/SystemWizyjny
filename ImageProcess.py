@@ -29,7 +29,7 @@ def findNail(image,scale_factor,gammaFactor,threshold):
 
     image2 = cv.resize(image, (0,0), fx=scale_factor, fy=scale_factor)  #make image smaller
     imgDilateAndEroded = imgPreliminaryProcessing(image2,gammaCorFactor=gammaFactor,threshold=threshold,showImg=True)
-    highHistogram,widthHistogram = lateralHistogram(imgDilateAndEroded)
+    highHistogram,widthHistogram = lateralHistogram(imgDilateAndEroded,showPlot=False)
 
     xMin,xMax = scanLateralHistogram(widthHistogram,0.05)
     yMin, yMax = scanLateralHistogram(highHistogram, 0.05)
@@ -104,6 +104,7 @@ def gammaCorrection(src, gamma):
 def cropImage(image,yMin, yMax, xMin, xMax, extraHeight, extraWidth,showImg=False):
 
     orgHigh, orgWidth, colorsNum = image.shape
+
     highCropStart = int(orgHigh * (yMin - extraHeight))
     highCropStop = int(orgHigh * (yMax + extraHeight))
     widthCropStart = int(orgWidth * (xMin - extraWidth))
@@ -117,14 +118,110 @@ def cropImage(image,yMin, yMax, xMin, xMax, extraHeight, extraWidth,showImg=Fals
 
 
 def lookForDefects(imageRaw, gammaCorFactor, threshold):
-    errors = np.zeros(shape=5,dtype=bool)
+    errors = [None,None,None,None,None]
 
     imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=True)
     highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=True)
 
-    errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)        #works
+    for i in range(0,1):
+        print(i)
+        errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
+
+        if errors[0]:
+            break
+
+        imageHead, imagePoint = separatePointAndHead(imageRaw, highHistogram, widthHistogram)
+        imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
+        imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
+
+        errors[2] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=5)
+        if errors[2]:
+            break
 
     printErrors(errors)
+
+
+def checkIfPointCut(imagePoint, imagePointTransformed, threshold):
+    output = imagePoint.copy()
+
+    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 10, 20)
+
+    longestLineLen = 0.0
+    longestIndex = 0
+
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+
+            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
+            lineLen = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+            if lineLen > longestLineLen:  # find longest line among found lines
+                longestLineLen = lineLen
+                longestIndex = i
+
+    angles = []
+    detectedError = False
+
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            longest = linesP[longestIndex][0]
+            l = linesP[i][0]
+
+            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
+            xl1, yl1, xl2, yl2 = longest[0], longest[1], longest[2], longest[3]
+
+            angle1 = np.arctan(np.absolute(y1 - y2) / np.absolute(x1 - x2)) / np.pi * 180
+            angle2 = np.arctan(np.absolute(yl1 - yl2) / np.absolute(xl1 - xl2)) / np.pi * 180
+            angles.append(np.absolute(angle2 - angle1))
+
+    for i in range(0, len(angles)):
+        if np.absolute(angles[i] - 90) < threshold:
+            detectedError = True
+            l = linesP[i][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+            l = linesP[longestIndex][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+
+    if detectedError:
+        cv.imshow("Window", output)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+    return detectedError
+
+
+def separatePointAndHead(image,highHistogram, widthHistogram):
+
+    xMin, xMax = scanLateralHistogram(widthHistogram,changeFactor=0.05)
+    yMin, yMax = scanLateralHistogram(highHistogram, changeFactor=0.05)
+
+    headLen = 0.02
+    pointXMin = measurePoint(widthHistogram,xMin,initialBuffer=0.3,maxDeviation=0.2)
+
+    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.05,showImg=True)
+    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=True)
+
+    return imageHead, imagePoint
+
+
+def measurePoint(histogram,xMin,initialBuffer,maxDeviation):
+
+    pointXMin = 0.0
+    startScan = int((xMin + initialBuffer)*len(histogram))
+    deviation = maxDeviation * np.absolute(np.max(histogram) - np.min(histogram))
+    print(startScan)
+    print(len(histogram))
+    print(deviation)
+
+    for i in range(startScan,len(histogram)):
+        movingAverage = np.average(histogram[i-150:i-1])
+        if np.absolute(movingAverage - histogram[i]) > deviation:
+            pointXMin = (i-30) / len(histogram)
+            print(i)
+            print(len(histogram))
+            print(pointXMin)
+            return pointXMin
 
 
 def printErrors(errors):
@@ -137,6 +234,7 @@ def printErrors(errors):
 def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
 
     output = imageRaw.copy()
+
     edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
     linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 80, 30)
 
@@ -156,6 +254,7 @@ def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
 
     angles = []
     detectedError = False
+
     if linesP is not None:
         for i in range(0, len(linesP)):
             longest = linesP[longestIndex][0]
