@@ -4,7 +4,7 @@ import ImageProcess as imgp
 import cv2 as cv
 #__all__ = []
 
-filename = 'head_1.jpg'
+filename = 'img/bent_1.jpg'
 
 image = imgp.readImg(filename)
 
