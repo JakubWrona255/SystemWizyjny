@@ -28,7 +28,7 @@ def imgPreliminaryProcessing(image,gammaCorFactor,threshold,showImg=False):
 def findNail(image,scale_factor,gammaFactor,threshold):
 
     image2 = cv.resize(image, (0,0), fx=scale_factor, fy=scale_factor)  #make image smaller
-    imgDilateAndEroded = imgPreliminaryProcessing(image2,gammaCorFactor=gammaFactor,threshold=threshold,showImg=True)
+    imgDilateAndEroded = imgPreliminaryProcessing(image2,gammaCorFactor=gammaFactor,threshold=threshold,showImg=False)
     highHistogram,widthHistogram = lateralHistogram(imgDilateAndEroded,showPlot=False)
 
     xMin,xMax = scanLateralHistogram(widthHistogram,0.05)
@@ -120,12 +120,12 @@ def cropImage(image,yMin, yMax, xMin, xMax, extraHeight, extraWidth,showImg=Fals
 def lookForDefects(imageRaw, gammaCorFactor, threshold):
     errors = [None,None,None,None,None]
 
-    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=True)
-    highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=True)
+    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
+    highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=False)
 
     for i in range(0,1):
         print(i)
-        errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
+        #errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
 
         if errors[0]:
             break
@@ -135,10 +135,30 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
         imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
 
         errors[2] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=5)
-        if errors[2]:
-            break
+        #if errors[2]:
+        #    break
+        checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold=5,showImg=True)
 
     printErrors(errors)
+
+#Mariusz's doing
+def checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold, showImg):
+    output = imagePoint.copy()
+    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 50, 20)
+
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+
+
+
+    if showImg:
+        cv.imshow("Pre-edges", output)
+        cv.imshow("Post-edges", edgesDet)
+        print(linesP)
+        cv.waitKey(0)
 
 
 def checkIfPointCut(imagePoint, imagePointTransformed, threshold):
@@ -199,7 +219,7 @@ def separatePointAndHead(image,highHistogram, widthHistogram):
     headLen = 0.02
     pointXMin = measurePoint(widthHistogram,xMin,initialBuffer=0.3,maxDeviation=0.2)
 
-    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.05,showImg=True)
+    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=True)
     imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=True)
 
     return imageHead, imagePoint
