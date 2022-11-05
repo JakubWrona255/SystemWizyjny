@@ -5,8 +5,8 @@ import cv2 as cv
 #__all__ = []
 
 
-filenameOrigin = 'img/pointCut_'
-for i in range(1,5,1):
+filenameOrigin = 'img/flatHead_'
+for i in range(1,7,1):
     filename = filenameOrigin + str(i) + '.jpg'
     print(filename)
     print("----")

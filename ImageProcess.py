@@ -133,10 +133,15 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
         imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
         imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
 
+        #cv.imshow("Actual processed line on image", imagePointTransformed)
+
+
+
+
         errors[2],errors[3] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=25)
-        #if errors[2]:
-        #    break
-        #checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold=5,showImg=True)
+
+        errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=6000)
+
 
     printErrors(errors)
 
@@ -317,3 +322,19 @@ def getLines(imageRaw, gammaCorFactor, threshold):
     cv.imshow("Window", output)
     cv.waitKey(0)
     cv.destroyAllWindows()
+
+
+def checkIfFlatHead(imageRaw, imagePointTransformed,thresholdOfArea):
+    errorFlatHead = False
+    invertedImagePointTransformed = 255 - imagePointTransformed
+
+    contours,a = cv.findContours(invertedImagePointTransformed,cv.RETR_TREE,cv.CHAIN_APPROX_NONE)
+    for contour in contours:
+        area = cv.contourArea(contour)
+        if area > thresholdOfArea:
+            errorFlatHead = True
+            cv.drawContours(imageRaw, contour, -1, (0, 255, 0), 3)
+            cv.imshow("withContour", imageRaw)
+            cv.waitKey(0)
+    return errorFlatHead
+
