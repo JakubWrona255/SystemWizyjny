@@ -124,8 +124,7 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
     highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=False)
 
     for i in range(0,1):
-        print(i)
-        #errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
+        errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
 
         if errors[0]:
             break
@@ -134,45 +133,38 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
         imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
         imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
 
-        errors[2] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=5)
+        errors[2],errors[3] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=25)
         #if errors[2]:
         #    break
-        checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold=5,showImg=True)
+        #checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold=5,showImg=True)
 
     printErrors(errors)
 
 #Mariusz's doing
 def checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold, showImg):
-    output = imagePoint.copy()
-    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 50, 20)
-
-    if linesP is not None:
-        for i in range(0, len(linesP)):
-            l = linesP[i][0]
-            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
-
-
-
-    if showImg:
-        cv.imshow("Pre-edges", output)
-        cv.imshow("Post-edges", edgesDet)
-        print(linesP)
-        cv.waitKey(0)
+    #it is unused, because this functionality is implemented in function below
+    pass
 
 
 def checkIfPointCut(imagePoint, imagePointTransformed, threshold):
     output = imagePoint.copy()
 
     edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 10, 20)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 15, None, 0, 20)#changed from 20 -> 15
 
     longestLineLen = 0.0
     longestIndex = 0
-
+    #print("Number of found lines on point cut")
+    #print(len(linesP))
+    #print("---------------")
     if linesP is not None:
         for i in range(0, len(linesP)):
             l = linesP[i][0]
+            #show actual processed line on image
+            #imgToShowWithLine = output.copy()
+            #cv.line(imgToShowWithLine, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+            #cv.imshow("Actual processed line on image", imgToShowWithLine)
+            #cv.waitKey(0)
 
             x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
             lineLen = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
@@ -182,7 +174,8 @@ def checkIfPointCut(imagePoint, imagePointTransformed, threshold):
                 longestIndex = i
 
     angles = []
-    detectedError = False
+    detectedErrorCutPoint = False
+    detectedErrorUnderCut = False
 
     if linesP is not None:
         for i in range(0, len(linesP)):
@@ -197,18 +190,23 @@ def checkIfPointCut(imagePoint, imagePointTransformed, threshold):
             angles.append(np.absolute(angle2 - angle1))
 
     for i in range(0, len(angles)):
+        #print("Difference between angles")
+        #print(np.absolute(angles[i] - 90))
         if np.absolute(angles[i] - 90) < threshold:
-            detectedError = True
+            detectedErrorCutPoint = True
             l = linesP[i][0]
             cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
             l = linesP[longestIndex][0]
             cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
 
-    if detectedError:
-        cv.imshow("Window", output)
-        cv.waitKey(0)
-        cv.destroyAllWindows()
-    return detectedError
+    if detectedErrorCutPoint:
+        if (len(linesP) >=8):
+            detectedErrorUnderCut = True
+        pass
+        #cv.imshow("Window", output)
+        #cv.waitKey(0)
+        #cv.destroyAllWindows()
+    return detectedErrorCutPoint,detectedErrorUnderCut
 
 
 def separatePointAndHead(image,highHistogram, widthHistogram):
@@ -219,8 +217,8 @@ def separatePointAndHead(image,highHistogram, widthHistogram):
     headLen = 0.02
     pointXMin = measurePoint(widthHistogram,xMin,initialBuffer=0.3,maxDeviation=0.2)
 
-    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=True)
-    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=True)
+    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=False)
+    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=False)
 
     return imageHead, imagePoint
 
@@ -230,17 +228,17 @@ def measurePoint(histogram,xMin,initialBuffer,maxDeviation):
     pointXMin = 0.0
     startScan = int((xMin + initialBuffer)*len(histogram))
     deviation = maxDeviation * np.absolute(np.max(histogram) - np.min(histogram))
-    print(startScan)
-    print(len(histogram))
-    print(deviation)
+    #print(startScan)
+    #print(len(histogram))
+    #print(deviation)
 
     for i in range(startScan,len(histogram)):
         movingAverage = np.average(histogram[i-150:i-1])
         if np.absolute(movingAverage - histogram[i]) > deviation:
             pointXMin = (i-30) / len(histogram)
-            print(i)
-            print(len(histogram))
-            print(pointXMin)
+            #print(i)
+            #print(len(histogram))
+            #print(pointXMin)
             return pointXMin
 
 
@@ -249,6 +247,7 @@ def printErrors(errors):
 
     for i in range(0,len(errors)):
             print(errorTypes[i],' : ',errors[i])
+    print("--------------------------------")
 
 
 def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
@@ -256,7 +255,7 @@ def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
     output = imageRaw.copy()
 
     edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 80, 30)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 100, 30)#from 80->100
 
     longestLineLen = 0.0
     longestIndex = 0
