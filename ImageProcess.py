@@ -45,7 +45,7 @@ def scanLateralHistogram(lateralHist, changeFactor):
     threshold = (np.max(lateralHist) - np.min(lateralHist)) * changeFactor
     k = 0
 
-    for i in range(0,len(lateralHist)):  #scan histogram from beginning of nail to the end of image width
+    for i in range(0,len(lateralHist)):  #scan histogram from beginning of nail to the end of image
         if detection == 0:
             if lateralHist[i] < np.max(lateralHist) - threshold:
                 k += 1
@@ -59,7 +59,7 @@ def scanLateralHistogram(lateralHist, changeFactor):
         if detection == 1:
             if lateralHist[i] > np.max(lateralHist) - threshold:
                 k += 1
-                if k > 4:
+                if k > 10:
                     varMax = i / len(lateralHist)
                     break
             else:
@@ -117,113 +117,15 @@ def cropImage(image,yMin, yMax, xMin, xMax, extraHeight, extraWidth,showImg=Fals
     return imageCrop
 
 
-def lookForDefects(imageRaw, gammaCorFactor, threshold):
-    errors = [None,None,None,None,None]
-
-    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
-    highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=False)
-
-    for i in range(0,1):
-        errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
-
-        if errors[0]:
-            break
-
-        imageHead, imagePoint = separatePointAndHead(imageRaw, highHistogram, widthHistogram)
-        imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
-        imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
-
-        #cv.imshow("Actual processed line on image", imagePointTransformed)
-
-
-
-
-        errors[2],errors[3] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=25)
-
-        errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=6000)
-
-
-    printErrors(errors)
-
-#Mariusz's doing
-def checkIfPointUnderCut(imagePoint,imagePointTransformed,threshold, showImg):
-    #it is unused, because this functionality is implemented in function below
-    pass
-
-
-def checkIfPointCut(imagePoint, imagePointTransformed, threshold):
-    output = imagePoint.copy()
-
-    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 15, None, 0, 20)#changed from 20 -> 15
-
-    longestLineLen = 0.0
-    longestIndex = 0
-    #print("Number of found lines on point cut")
-    #print(len(linesP))
-    #print("---------------")
-    if linesP is not None:
-        for i in range(0, len(linesP)):
-            l = linesP[i][0]
-            #show actual processed line on image
-            #imgToShowWithLine = output.copy()
-            #cv.line(imgToShowWithLine, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
-            #cv.imshow("Actual processed line on image", imgToShowWithLine)
-            #cv.waitKey(0)
-
-            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
-            lineLen = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-            if lineLen > longestLineLen:  # find longest line among found lines
-                longestLineLen = lineLen
-                longestIndex = i
-
-    angles = []
-    detectedErrorCutPoint = False
-    detectedErrorUnderCut = False
-
-    if linesP is not None:
-        for i in range(0, len(linesP)):
-            longest = linesP[longestIndex][0]
-            l = linesP[i][0]
-
-            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
-            xl1, yl1, xl2, yl2 = longest[0], longest[1], longest[2], longest[3]
-
-            angle1 = np.arctan(np.absolute(y1 - y2) / np.absolute(x1 - x2)) / np.pi * 180
-            angle2 = np.arctan(np.absolute(yl1 - yl2) / np.absolute(xl1 - xl2)) / np.pi * 180
-            angles.append(np.absolute(angle2 - angle1))
-
-    for i in range(0, len(angles)):
-        #print("Difference between angles")
-        #print(np.absolute(angles[i] - 90))
-        if np.absolute(angles[i] - 90) < threshold:
-            detectedErrorCutPoint = True
-            l = linesP[i][0]
-            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
-            l = linesP[longestIndex][0]
-            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
-
-    if detectedErrorCutPoint:
-        if (len(linesP) >=8):
-            detectedErrorUnderCut = True
-        pass
-        #cv.imshow("Window", output)
-        #cv.waitKey(0)
-        #cv.destroyAllWindows()
-    return detectedErrorCutPoint,detectedErrorUnderCut
-
-
 def separatePointAndHead(image,highHistogram, widthHistogram):
 
-    xMin, xMax = scanLateralHistogram(widthHistogram,changeFactor=0.05)
-    yMin, yMax = scanLateralHistogram(highHistogram, changeFactor=0.05)
+    xMin, xMax = scanLateralHistogram(widthHistogram,changeFactor=0.1)
+    yMin, yMax = scanLateralHistogram(highHistogram, changeFactor=0.1)
+    headLen = 0.03
+    pointXMin = measurePoint(widthHistogram,xMin,initialBuffer=0.3,maxDeviation=0.30)
 
-    headLen = 0.02
-    pointXMin = measurePoint(widthHistogram,xMin,initialBuffer=0.3,maxDeviation=0.2)
-
-    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=False)
-    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=False)
+    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=True)
+    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=True)
 
     return imageHead, imagePoint
 
@@ -233,26 +135,38 @@ def measurePoint(histogram,xMin,initialBuffer,maxDeviation):
     pointXMin = 0.0
     startScan = int((xMin + initialBuffer)*len(histogram))
     deviation = maxDeviation * np.absolute(np.max(histogram) - np.min(histogram))
-    #print(startScan)
-    #print(len(histogram))
-    #print(deviation)
 
     for i in range(startScan,len(histogram)):
         movingAverage = np.average(histogram[i-150:i-1])
         if np.absolute(movingAverage - histogram[i]) > deviation:
-            pointXMin = (i-30) / len(histogram)
-            #print(i)
-            #print(len(histogram))
-            #print(pointXMin)
+            pointXMin = (i-45) / len(histogram)
             return pointXMin
 
 
 def printErrors(errors):
     errorTypes = ['Bent nail','Problem with head','Cut point','Extra material on point','Smashed point']
-
+    print(errors)
     for i in range(0,len(errors)):
             print(errorTypes[i],' : ',errors[i])
     print("--------------------------------")
+
+
+def getLines(imageRaw, gammaCorFactor, threshold):
+
+    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold)
+    output = imageRaw.copy()
+    edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
+
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 80, 30)
+
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255,0, 255), 2, cv.LINE_AA)
+
+    cv.imshow("Window", output)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
 
 
 def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
@@ -260,7 +174,7 @@ def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
     output = imageRaw.copy()
 
     edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 100, 30)#from 80->100
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 100, 15)#from 80->100
 
     longestLineLen = 0.0
     longestIndex = 0
@@ -287,11 +201,21 @@ def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
             x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
             xl1, yl1, xl2, yl2 = longest[0], longest[1], longest[2], longest[3]
 
-            angle1 = np.arctan(np.absolute(y1-y2)/np.absolute(x1-x2))/np.pi * 180
-            angle2 = np.arctan(np.absolute(yl1 - yl2) / np.absolute(xl1 - xl2))/np.pi * 180
-            angles.append(np.absolute(angle2-angle1))
+            diff1 = np.absolute(y1 - y2)
+            diff2 = np.absolute(x1 - x2)
+            diffL1 = np.absolute(yl1 - yl2)
+            diffL2 = np.absolute(xl1 - xl2)
 
-    for i in range (0,len(angles)):
+            if diff2 == 0:
+                diff2 = 1
+            if diffL2 == 0:
+                diffL2 = 1
+
+            angle1 = np.arctan(diff1 / diff2) / np.pi * 180
+            angle2 = np.arctan(diffL1 / diffL2) / np.pi * 180
+            angles.append(np.absolute(angle2 - angle1))
+
+    for i in range(0,len(angles)):
         if angles[i] > maxAngDiff:
             detectedError = True
             l = linesP[i][0]
@@ -306,25 +230,7 @@ def checkIfBent(imageRaw,imageTransformed,maxAngDiff):
     return detectedError
 
 
-def getLines(imageRaw, gammaCorFactor, threshold):
-
-    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold)
-    output = imageRaw.copy()
-    edgesDet = cv.Canny(imageTransformed, 1, 1, None, 3)
-
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 80, 30)
-
-    if linesP is not None:
-        for i in range(0, len(linesP)):
-            l = linesP[i][0]
-            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255,0, 255), 2, cv.LINE_AA)
-
-    cv.imshow("Window", output)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
-
-
-def checkIfFlatHead(imageRaw, imagePointTransformed,thresholdOfArea):
+def checkIfFlatHead(imagePoint, imagePointTransformed,thresholdOfArea):
     errorFlatHead = False
     invertedImagePointTransformed = 255 - imagePointTransformed
 
@@ -333,8 +239,137 @@ def checkIfFlatHead(imageRaw, imagePointTransformed,thresholdOfArea):
         area = cv.contourArea(contour)
         if area > thresholdOfArea:
             errorFlatHead = True
-            cv.drawContours(imageRaw, contour, -1, (0, 255, 0), 3)
-            cv.imshow("withContour", imageRaw)
+            cv.drawContours(imagePoint, contour, -1, (0, 255, 0), 3)
+            cv.imshow("withContour", imagePoint)
             cv.waitKey(0)
     return errorFlatHead
 
+
+def checkIfPointCut(imagePoint, imagePointTransformed, thresholdAngle, showImg):
+    output = imagePoint.copy()
+    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 15, None, 20, 15)#changed from 20 -> 15
+
+    longestLineLen = 0.0
+    longestIndex = 0
+    #print("Number of found lines on point cut")
+    #print(len(linesP))
+    #print("---------------")
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+            #show actual processed line on image
+            #imgToShowWithLine = output.copy()
+            #cv.line(imgToShowWithLine, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+            #cv.imshow("Actual processed line on image", imgToShowWithLine)
+            #cv.waitKey(0)
+
+            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
+            lineLen = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+            if lineLen > longestLineLen:  # find longest line among found lines
+                longestLineLen = lineLen
+                longestIndex = i
+
+    angles = []
+    detectedErrorCutPoint = False
+
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            longest = linesP[longestIndex][0]
+            l = linesP[i][0]
+
+            x1, y1, x2, y2 = l[0], l[1], l[2], l[3]
+            xl1, yl1, xl2, yl2 = longest[0], longest[1], longest[2], longest[3]
+
+            diff1 = np.absolute(y1 - y2)
+            diff2 = np.absolute(x1 - x2)
+            diffL1 = np.absolute(yl1 - yl2)
+            diffL2 = np.absolute(xl1 - xl2)
+
+            if diff2 == 0:
+                diff2 = 1
+            if diffL2 == 0:
+                diffL2 = 1
+
+            angle1 = np.arctan(diff1 / diff2) / np.pi * 180
+            angle2 = np.arctan(diffL1 / diffL2) / np.pi * 180
+            angles.append(np.absolute(angle2 - angle1))
+
+    for i in range(0, len(angles)):
+        #print("Difference between angles")
+        #print(np.absolute(angles[i] - 90))
+        if np.absolute(angles[i] - 90) < thresholdAngle:
+            detectedErrorCutPoint = True
+            l = linesP[i][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+            l = linesP[longestIndex][0]
+            cv.line(output, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+
+    if showImg and detectedErrorCutPoint:
+        cv.imshow("Window", output)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+
+    return detectedErrorCutPoint
+
+
+def checkIfPointUnderCut(imagePoint,imagePointTransformed,showImg,criticalNumOfLines):
+
+    output = imagePoint.copy()
+    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 15, None, 0, 20)  # changed from 20 -> 15
+
+    detectedErrorUnderCut = False
+
+    if len(linesP) >= criticalNumOfLines:
+        detectedErrorUnderCut = True
+
+    if showImg and detectedErrorUnderCut:
+        cv.imshow("Window", output)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+
+    return detectedErrorUnderCut
+
+
+def checkHead(imageHead, imageHeadTransformed,showImg=False):
+    headError = False
+    # to fill up
+    return headError
+
+
+def lookForDefects(imageRaw, gammaCorFactor, threshold):
+    errors = [None,None,None,None,None]
+
+    imageTransformed = imgPreliminaryProcessing(imageRaw, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
+    highHistogram, widthHistogram = lateralHistogram(imageTransformed, showPlot=False)
+
+    for i in range(0,1):
+        errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=8)     # works
+        if errors[0]:
+            break
+
+        imageHead, imagePoint = separatePointAndHead(imageRaw, highHistogram, widthHistogram)
+        imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
+        imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
+
+        errors[1] = checkHead(imageHead, imageHeadTransformed)
+        if errors[1]:
+            break
+
+        errors[2] = checkIfPointCut(imagePoint,imagePointTransformed,thresholdAngle=10,showImg=True)
+        errors[3] = checkIfPointUnderCut(imagePoint,imagePointTransformed,showImg=False,criticalNumOfLines=8)
+        #if error 2 occurred, go check error 3. If then error 3 occurred - there was false detection of error 2. The true error is error 3.
+        if errors[3]:
+            #errors[2] = False
+            break
+
+        if errors[2]:
+            break
+
+        errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=9000)
+        if errors[4]:
+            break
+
+    printErrors(errors)
