@@ -126,21 +126,26 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
     for i in range(0,1):
         errors[0] = checkIfBent(imageRaw,imageTransformed,maxAngDiff=5)     # works
 
-        if errors[0]:
-            break
+        #if errors[0]:
+        #    break
 
         imageHead, imagePoint = separatePointAndHead(imageRaw, highHistogram, widthHistogram)
+        #cv.imshow("uszkodzone",imageHead)
+        #cv.waitKey(0)
+
+
         imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
         imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
 
         #cv.imshow("Actual processed line on image", imagePointTransformed)
 
+        #errors[2],errors[3] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=25)
 
+        #errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=8500)
 
+        #cv.imshow("głowka",imageHeadTransformed)
+        checkIfWrongHead(imageHead,imageHeadTransformed)
 
-        errors[2],errors[3] = checkIfPointCut(imagePoint,imagePointTransformed,threshold=25)
-
-        errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=6000)
 
 
     printErrors(errors)
@@ -336,5 +341,21 @@ def checkIfFlatHead(imageRaw, imagePointTransformed,thresholdOfArea):
             cv.drawContours(imageRaw, contour, -1, (0, 255, 0), 3)
             cv.imshow("withContour", imageRaw)
             cv.waitKey(0)
+            print(area)
     return errorFlatHead
+
+def checkIfWrongHead(imageRaw,imageHeadTransformed):
+    lateralHistogram(imageHeadTransformed,True)
+    output = imageRaw.copy()
+
+    edgesDet = cv.Canny(imageHeadTransformed, 1, 1, None, 3)
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 20, None, 0, 20)
+    if linesP is not None:
+        for i in range(0, len(linesP)):
+            l = linesP[i][0]
+            #show actual processed line on image
+            imgToShowWithLine = output.copy()
+            cv.line(imgToShowWithLine, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2, cv.LINE_AA)
+            cv.imshow("Actual processed line on image", imgToShowWithLine)
+            cv.waitKey(0)
 

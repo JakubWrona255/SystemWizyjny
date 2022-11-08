@@ -5,8 +5,8 @@ import cv2 as cv
 #__all__ = []
 
 
-filenameOrigin = 'img/flatHead_'
-for i in range(1,7,1):
+filenameOrigin = 'img/head_'
+for i in range(3,4,1):
     filename = filenameOrigin + str(i) + '.jpg'
     print(filename)
     print("----")
@@ -15,6 +15,8 @@ for i in range(1,7,1):
     yMin, yMax, xMin, xMax = imgp.findNail(image, scale_factor=0.15, gammaFactor=1, threshold=70)
 
     imageCropped = imgp.cropImage(image, yMin, yMax, xMin, xMax, extraHeight=0.05, extraWidth=0.05)
+    cv.imshow("ImageCropped", imageCropped)
+    cv.waitKey()
 
     error = imgp.lookForDefects(imageCropped, gammaCorFactor=1, threshold=50)
 
