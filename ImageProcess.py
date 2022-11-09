@@ -117,15 +117,15 @@ def cropImage(image,yMin, yMax, xMin, xMax, extraHeight, extraWidth,showImg=Fals
     return imageCrop
 
 
-def separatePointAndHead(image,highHistogram, widthHistogram):
+def separatePointAndHead(image,highHistogram, widthHistogram,showImg):
 
     xMin, xMax = scanLateralHistogram(widthHistogram,changeFactor=0.1)
     yMin, yMax = scanLateralHistogram(highHistogram, changeFactor=0.1)
     headLen = 0.03
     pointXMin = measurePoint(widthHistogram,xMin,initialBuffer=0.3,maxDeviation=0.30)
 
-    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=True)
-    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=True)
+    imageHead = cropImage(image,yMin,yMax,xMin,xMin + headLen,extraHeight=0.2,extraWidth=0.02,showImg=showImg)
+    imagePoint = cropImage(image, yMin, yMax, pointXMin, xMax, extraHeight=0.1, extraWidth=0.05, showImg=showImg)
 
     return imageHead, imagePoint
 
@@ -245,16 +245,16 @@ def checkIfFlatHead(imagePoint, imagePointTransformed,thresholdOfArea):
     return errorFlatHead
 
 
-def checkIfPointCut(imagePoint, imagePointTransformed, thresholdAngle, showImg):
+def checkIfPointCut(imagePoint, imagePointTransformed,minIntersectingPoints = 15,minLineLength=20,maxLineGap=15, thresholdAngle=10, showImg=False):
     output = imagePoint.copy()
     edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 15, None, 20, 15)#changed from 20 -> 15
+    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, minIntersectingPoints, None, minLineLength, maxLineGap)
 
     longestLineLen = 0.0
     longestIndex = 0
-    #print("Number of found lines on point cut")
-    #print(len(linesP))
-    #print("---------------")
+    print("Number of found lines on point cut")
+    print(len(linesP))
+    print("---------------")
     if linesP is not None:
         for i in range(0, len(linesP)):
             l = linesP[i][0]
@@ -311,24 +311,21 @@ def checkIfPointCut(imagePoint, imagePointTransformed, thresholdAngle, showImg):
         cv.waitKey(0)
         cv.destroyAllWindows()
 
-    return detectedErrorCutPoint
+    return detectedErrorCutPoint,len(linesP)
 
 
-def checkIfPointUnderCut(imagePoint,imagePointTransformed,showImg,criticalNumOfLines):
+
+
+def checkIfPointUnderCut(imagePoint,imagePointTransformed,criticalNumOfLines,showImg):
 
     output = imagePoint.copy()
-    edgesDet = cv.Canny(imagePointTransformed, 1, 1, None, 3)
-    linesP = cv.HoughLinesP(edgesDet, 1, np.pi / 180, 15, None, 0, 20)  # changed from 20 -> 15
-
     detectedErrorUnderCut = False
+    detectedCutPoint,numberOfDetectedLines = checkIfPointCut(imagePoint,imagePointTransformed,minIntersectingPoints = 15,minLineLength=15,maxLineGap=20, thresholdAngle=25,showImg=showImg)
 
-    if len(linesP) >= criticalNumOfLines:
+    if (detectedCutPoint and numberOfDetectedLines >= criticalNumOfLines):
         detectedErrorUnderCut = True
-
-    if showImg and detectedErrorUnderCut:
-        cv.imshow("Window", output)
-        cv.waitKey(0)
-        cv.destroyAllWindows()
+    else:
+        detectedErrorUnderCut = False
 
     return detectedErrorUnderCut
 
@@ -350,7 +347,7 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
         if errors[0]:
             break
 
-        imageHead, imagePoint = separatePointAndHead(imageRaw, highHistogram, widthHistogram)
+        imageHead, imagePoint = separatePointAndHead(imageRaw, highHistogram, widthHistogram,showImg=False)
         imageHeadTransformed = imgPreliminaryProcessing(imageHead, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
         imagePointTransformed = imgPreliminaryProcessing(imagePoint, gammaCorFactor=gammaCorFactor, threshold=threshold, showImg=False)
 
@@ -358,17 +355,17 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
         if errors[1]:
             break
 
-        errors[2] = checkIfPointCut(imagePoint,imagePointTransformed,thresholdAngle=10,showImg=True)
-        errors[3] = checkIfPointUnderCut(imagePoint,imagePointTransformed,showImg=False,criticalNumOfLines=8)
+        errors[2],_ = checkIfPointCut(imagePoint,imagePointTransformed,15,20,15,thresholdAngle=10,showImg=True)
+        errors[3] = checkIfPointUnderCut(imagePoint,imagePointTransformed,criticalNumOfLines=7,showImg=False)
         #if error 2 occurred, go check error 3. If then error 3 occurred - there was false detection of error 2. The true error is error 3.
         if errors[3]:
-            #errors[2] = False
+            errors[2] = False
             break
 
         if errors[2]:
             break
 
-        errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=9000)
+        errors[4] = checkIfFlatHead(imagePoint,imagePointTransformed,thresholdOfArea=6000)#experimental job
         if errors[4]:
             break
 
