@@ -239,6 +239,8 @@ def checkIfFlatHead(imagePoint, imagePointTransformed,thresholdOfArea):
         area = cv.contourArea(contour)
         if area > thresholdOfArea:
             errorFlatHead = True
+            print("Maximum surface area exceeded:")
+            print(area)
             cv.drawContours(imagePoint, contour, -1, (0, 255, 0), 3)
             cv.imshow("withContour", imagePoint)
             cv.waitKey(0)
@@ -252,9 +254,9 @@ def checkIfPointCut(imagePoint, imagePointTransformed,minIntersectingPoints = 15
 
     longestLineLen = 0.0
     longestIndex = 0
-    print("Number of found lines on point cut")
-    print(len(linesP))
-    print("---------------")
+    #print("Number of found lines on point cut")
+    #print(len(linesP))
+    #print("---------------")
     if linesP is not None:
         for i in range(0, len(linesP)):
             l = linesP[i][0]
@@ -332,7 +334,16 @@ def checkIfPointUnderCut(imagePoint,imagePointTransformed,criticalNumOfLines,sho
 
 def checkHead(imageHead, imageHeadTransformed,showImg=False):
     headError = False
-    # to fill up
+    heightHistogram, widthHistogram = lateralHistogram(imageHeadTransformed,False)
+
+    xMin,xMax = scanLateralHistogram(heightHistogram,0.1)
+    length = xMax-xMin
+    if length < 0.5:
+        headError = True
+        plt.plot(heightHistogram)
+        plt.title("Error - too short head")
+        plt.show()
+
     return headError
 
 
@@ -356,7 +367,7 @@ def lookForDefects(imageRaw, gammaCorFactor, threshold):
             break
 
         errors[2],_ = checkIfPointCut(imagePoint,imagePointTransformed,15,20,15,thresholdAngle=10,showImg=True)
-        errors[3] = checkIfPointUnderCut(imagePoint,imagePointTransformed,criticalNumOfLines=7,showImg=False)
+        errors[3] = checkIfPointUnderCut(imagePoint,imagePointTransformed,criticalNumOfLines=8,showImg=True)
         #if error 2 occurred, go check error 3. If then error 3 occurred - there was false detection of error 2. The true error is error 3.
         if errors[3]:
             errors[2] = False
